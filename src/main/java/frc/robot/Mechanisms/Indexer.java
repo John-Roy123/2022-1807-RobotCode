@@ -15,12 +15,14 @@ import edu.wpi.first.wpilibj.util.Color;
 
 public class Indexer {
 
-    Timer timeout = new Timer();
+     public static boolean shoot = false;
+
+    //Timer timeout = new Timer();
     
     Color detectedColor;
     //Color Sensor 
-    private I2C.Port i2cPort = I2C.Port.kOnboard;
-    private ColorSensorV3 m_colorS = new ColorSensorV3(i2cPort);
+    //private I2C.Port i2cPort = I2C.Port.kOnboard;
+    //private ColorSensorV3 m_colorS = new ColorSensorV3(i2cPort);
     private ColorMatch m_colorMatch = new ColorMatch();
     //Color targeting
     private Color BLUE = new Color(0, 0, 0.5);
@@ -57,7 +59,7 @@ public String  ColorSensor(){
     m_colorMatch.addColorMatch(BLUE);
     m_colorMatch.addColorMatch(NONE);
 //Detecting and result 
-detectedColor = m_colorS.getColor();
+//detectedColor = m_colorS.getColor();
 String colorString;
 ColorMatchResult match = m_colorMatch.matchClosestColor(detectedColor);
 
@@ -73,14 +75,16 @@ if(match.color.equals(BLUE)){
 
 
 //Printing all values to the SmartDash
-SmartDashboard.putNumber("Red",detectedColor.red);
-SmartDashboard.putNumber("Blue", detectedColor.blue);
+//SmartDashboard.putNumber("Red",detectedColor.red);
+//SmartDashboard.putNumber("Blue", detectedColor.blue);
 SmartDashboard.putString("Color", colorString);
 return colorString;
 }
 
 
-
+public static void shooting(Boolean yes){
+    shoot = yes;
+}
 
 
 public void setIndex(){
@@ -94,16 +98,30 @@ public boolean getIndexStatus(){
 
 
 
-public void COLLECT(Boolean RUN, Boolean OTHER){
+public void COLLECT(Boolean RUN){
     if((RUN || IndexStatus)  && !HARDSTOP){
         indexerWheel.set(-0.5);
     }
-    else if(OTHER){
-        indexerWheel.set(0.5);
+    else if(shoot){
+        indexerWheel.set(-.8);
     }
     else{
         indexerWheel.set(0);
     }
+}
+
+
+
+    public void autoCOLLECT(Boolean RUN){
+        if(RUN && !shoot && !HARDSTOP){
+            indexerWheel.set(-0.6);
+        }
+        else if(shoot){
+            indexerWheel.set(-0.6);
+        }
+        else{
+            indexerWheel.set(0);
+        }
 }
 
 

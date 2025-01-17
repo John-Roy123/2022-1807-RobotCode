@@ -26,8 +26,7 @@ public class Collector {
 
     private  WPI_TalonFX collectorMotor;
 
-    private RelativeEncoder m_encoder;
-    private SparkMaxPIDController m_pidController;
+
     //private final Drivetrain m_drive = new Robot().m_Drive;
 
     public double kP, kI, kD, kIz, kFF, kMaxOutput, kMinOutput;
@@ -49,11 +48,17 @@ public class Collector {
 
     }
 
-    public void dropped(boolean pistonsOut, boolean other, DoubleSolenoid m_doubleSolenoid) { //true is pistons out, false is not
-        
-        if (pistonsOut || other) {
+    public void extendAuto(DoubleSolenoid m_doubleSolenoid){
+        m_doubleSolenoid.set(Value.kForward);
+    }
+
+    public void dropped(boolean pistonsOut, DoubleSolenoid m_doubleSolenoid) { //true is pistons out, false is not
+        BatteryMap.collectValues(collectorMotor, m_doubleSolenoid);
+        if (pistonsOut) {
             
-            m_doubleSolenoid.toggle();;
+            m_doubleSolenoid.set(Value.kForward);
+        } else if (!pistonsOut) {            
+            m_doubleSolenoid.set(Value.kReverse);
         }
             
 
@@ -67,11 +72,26 @@ public class Collector {
     } 
 
 
-    public void COLLECT(Boolean Dump, Boolean Collect) {
-        BatteryMap.collectValues(collectorMotor, Collect);
+    public void COLLECT(Boolean Collect, Boolean Dump) {
+        
         if (Collect) {
             SmartDashboard.putBoolean("Collecting", Collect);
-            collectorMotor.set(.35);
+            collectorMotor.set(.4);
+        } else if (Dump) {
+            
+            collectorMotor.set(ControlMode.PercentOutput,-.4);
+        }
+        else{
+            SmartDashboard.putBoolean("Collecting", Collect);
+            collectorMotor.set(ControlMode.PercentOutput, 0);
+        }
+    }
+
+    public void autoCOLLECT(Boolean Dump, Boolean Collect) {
+        
+        if (Collect) {
+            SmartDashboard.putBoolean("Collecting", Collect);
+            collectorMotor.set(.3);
         } else if (Dump) {
             
             collectorMotor.set(ControlMode.PercentOutput,-.2);
@@ -81,8 +101,6 @@ public class Collector {
             collectorMotor.set(ControlMode.PercentOutput, 0);
         }
     }
-
-  
 
     public double neededSpeed(double DriveTrainSpeed) {
       

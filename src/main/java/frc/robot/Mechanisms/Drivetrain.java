@@ -1,12 +1,21 @@
 package frc.robot.Mechanisms;
 
-import com.ctre.phoenix.motorcontrol.ControlMode;
+import java.lang.reflect.Field;
+import java.security.PublicKey;
+
+import com.ctre.phoenix.motion.MotionProfileStatus;
 import com.ctre.phoenix.motorcontrol.NeutralMode;
 import com.ctre.phoenix.motorcontrol.can.WPI_TalonFX;
+import com.kauailabs.navx.frc.AHRS;
 
+import edu.wpi.first.math.controller.PIDController;
+import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.kinematics.DifferentialDriveOdometry;
 import edu.wpi.first.networktables.NetworkTableInstance;
+import edu.wpi.first.wpilibj.I2C.Port;
 import edu.wpi.first.wpilibj.drive.DifferentialDrive;
 import edu.wpi.first.wpilibj.motorcontrol.MotorControllerGroup;
+import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Systems.BatteryMap;
 import frc.robot.Systems.Vision;
@@ -26,20 +35,38 @@ public class Drivetrain {
 
     private final DifferentialDrive drive;
     
-    public static double steering;
+    public static double steering, limeSteering, piSteering;
     public static boolean manualSteering;
 
-    public boolean neutralMode = true;
+    public static Pose2d position;
+    DifferentialDriveOdometry odometry;
+    AHRS m_navX;
+
+
+
+    boolean coasting;
 
     double limeSteerCoefficient = .1;
     double piSteerCoefficient = .1;
+    
+    boolean limeLightTargeting, piTargeting = false;
+
+    PIDController tarPid;
+    PIDController drivePid;
 
 
-    boolean dtRunning;
+    double visible;
+    
+    Field2d field;
     
     public Drivetrain() {
+      m_navX = new AHRS(Port.kOnboard);
 
 
+      odometry = new DifferentialDriveOdometry(m_navX.getRotation2d());
+
+      tarPid = new PIDController(.038, 0.002, 0.002);
+      drivePid = new PIDController(.038, 0.002, 0.002); //estimates for driving pid
 
       m_leftMotorOne = new WPI_TalonFX(1);
       m_leftMotorTwo = new WPI_TalonFX(2);
@@ -49,6 +76,15 @@ public class Drivetrain {
       m_RightMotorFive = new WPI_TalonFX(5);
       m_RightMotorSix = new WPI_TalonFX(6);
 
+
+      m_leftMotorOne.configOpenloopRamp(0.5);
+      m_leftMotorTwo.configOpenloopRamp(0.5);
+      m_leftMotorThree.configOpenloopRamp(0.5);
+      m_RightMotorFour.configOpenloopRamp(0.5);
+      m_RightMotorFive.configOpenloopRamp(0.5);
+      m_RightMotorSix.configOpenloopRamp(0.5);
+      
+      
 
       m_leftMotorOne.setNeutralMode(NeutralMode.Brake);
       m_leftMotorTwo.setNeutralMode(NeutralMode.Brake);
@@ -60,67 +96,130 @@ public class Drivetrain {
 
 
       right = new MotorControllerGroup(m_RightMotorFour, m_RightMotorFive, m_RightMotorSix);
-      left = new MotorControllerGroup(m_leftMotorThree, m_leftMotorOne, m_leftMotorTwo);
+      left = new MotorControllerGroup(m_leftMotorOne, m_leftMotorTwo,m_leftMotorThree);
 
       left.setInverted(true);
 
       drive = new DifferentialDrive(right, left);
 
-      
-      manualSteering = true;
+      field = new Field2d();
+
+      SmartDashboard.putData("Field", field);
+
+      //manualSteering = true;
      
 
 
       }
 
+
+
+
+    
+
     @SuppressWarnings("ParameterName")
     public void drive(double speed, double rotation) {
 
-      
-      if (manualSteering) steering = rotation * 0.65;
-      
-      drive.arcadeDrive(speed, steering);
-      if(speed > .1 ||speed < -.1 || rotation > .1 || rotation < .1) dtRunning = true;
-      else dtRunning= false; 
-      BatteryMap.driveTrainMotors(m_RightMotorFive, m_RightMotorSix, m_leftMotorOne, m_leftMotorTwo,m_RightMotorFour,m_leftMotorThree, dtRunning);
-    }
+      position = odometry.update(m_navX.getRotation2d(), leftSideWheels(), rightSideWheels());
+      field.setRobotPose(odometry.getPoseMeters());
 
-    public void brake(boolean braking){
-      SmartDashboard.putBoolean("NeutralMode", neutralMode);
-      if(braking) neutralMode = !neutralMode;
-        if(!neutralMode){
-        m_leftMotorOne.setNeutralMode(NeutralMode.Coast);
-        m_leftMotorTwo.setNeutralMode(NeutralMode.Coast);
-        m_leftMotorThree.setNeutralMode(NeutralMode.Coast);
-        
-        m_RightMotorFour.setNeutralMode(NeutralMode.Coast);
-        m_RightMotorFive.setNeutralMode(NeutralMode.Coast);
-        m_RightMotorSix.setNeutralMode(NeutralMode.Coast);
-  
+      SmartDashboard.putNumber("Gyro", m_navX.getAngle());
+
+      if(!manualSteering){
+        if(limeLightTargeting && !piTargeting) drive.arcadeDrive(speed, limeSteering);
+        else if(piTargeting && !limeLightTargeting) drive.arcadeDrive(speed, piSteering);
+
       }
       else{
-      m_leftMotorOne.setNeutralMode(NeutralMode.Brake);
-      m_leftMotorTwo.setNeutralMode(NeutralMode.Brake);
-      m_leftMotorThree.setNeutralMode(NeutralMode.Brake);
+      steering = rotation * 0.75;
       
-      m_RightMotorFour.setNeutralMode(NeutralMode.Brake);
-      m_RightMotorFive.setNeutralMode(NeutralMode.Brake);
-      m_RightMotorSix.setNeutralMode(NeutralMode.Brake);
+      //deceleration(speed);
+
+      drive.arcadeDrive(speed, steering);
+      }
+      BatteryMap.driveTrainMotors(m_RightMotorFive, m_RightMotorSix, m_leftMotorOne, m_leftMotorTwo);
+    }
+
+
+    public void driveTwo(double speed, double rotation, boolean lime) {
+      steering = rotation * 0.75;
+
+      if(lime) drive.arcadeDrive(speed, limeSteering);
+      else drive.arcadeDrive(speed, steering);
+
+
+
+    }
+  
+
+
+    public void autoRamp(boolean yes){
+      m_leftMotorOne.configOpenloopRamp(0);
+      m_leftMotorTwo.configOpenloopRamp(0);
+      m_leftMotorThree.configOpenloopRamp(0);
+      m_RightMotorFour.configOpenloopRamp(0);
+      m_RightMotorFive.configOpenloopRamp(0);
+      m_RightMotorSix.configOpenloopRamp(0);
+    }
+    public void RAMP(Boolean on){
+      if(on){
+      m_leftMotorOne.configOpenloopRamp(0.);
+      m_leftMotorTwo.configOpenloopRamp(0.);
+      m_leftMotorThree.configOpenloopRamp(0.);
+      m_RightMotorFour.configOpenloopRamp(0.);
+      m_RightMotorFive.configOpenloopRamp(0.);
+      m_RightMotorSix.configOpenloopRamp(0.);
+      }
+      else{
+      m_leftMotorOne.configOpenloopRamp(0.6);
+      m_leftMotorTwo.configOpenloopRamp(0.6);
+      m_leftMotorThree.configOpenloopRamp(0.6);
+      m_RightMotorFour.configOpenloopRamp(0.6);
+      m_RightMotorFive.configOpenloopRamp(0.6);
+      m_RightMotorSix.configOpenloopRamp(0.6);
       }
     }
+
+
+    public void CoordinateDrive(double X, double Y) {
+      double CurrentX = position.getX();
+      double CurrentY = position.getY();
+
+      double dis = Math.sqrt(Math.pow((CurrentX - X), 2) + Math.pow((CurrentY - X), 2));
+
+      double Xdif = CurrentX - X;
+      double Ydif = CurrentY - Y;
+
+      double theta = Math.atan(Ydif/Xdif);
+      double CurrentTheta = position.getRotation().getDegrees();
+
+      drive.arcadeDrive(drivePid.calculate(dis, 0), tarPid.calculate(CurrentTheta, theta));
+
+    }
+
+
+
 
 
     public void targetLime(boolean On) {
-      //manualSteering = !On;
+      visible = Vision.targetVisible();
+      if(visible == 1 && On){
+        manualSteering = false;
+      }else{
+        manualSteering = true;
+      }
+      limeLightTargeting = On;
       if (On) {
-        steering = Vision.AngleFromTarget() * limeSteerCoefficient;
+        limeSteering = Vision.AngleFromTarget();
+        limeSteering = -tarPid.calculate(Vision.AngleFromTarget(), 0);
       }
     }
 
     public void TargetPi(boolean On) {
-      //manualSteering = !On;
+      manualSteering = !On;
+      piTargeting = On;
       if (On) {
-        steering = Vision.AngleFromBall() * piSteerCoefficient;
+        piSteering = Vision.AngleFromBall() * piSteerCoefficient;
       }
     }
 
@@ -135,27 +234,21 @@ public class Drivetrain {
 //      return wheelSpeed;  
   //  }
 
-public void driveHalf(Boolean bleft, boolean bright){
-  if(bleft){
-    m_leftMotorOne.set(ControlMode.PercentOutput, 0.2);
-        m_leftMotorTwo.set(ControlMode.PercentOutput, 0.2);
-        m_leftMotorThree.set(ControlMode.PercentOutput, 0.2);
-  }
-  else{
-    m_leftMotorOne.set(ControlMode.PercentOutput, 0);
-        m_leftMotorTwo.set(ControlMode.PercentOutput, 0);
-        m_leftMotorThree.set(ControlMode.PercentOutput, 0);}
-  if(bright){
-    m_RightMotorFour.set(ControlMode.PercentOutput, 0.2);
-    m_RightMotorFive.set(ControlMode.PercentOutput, 0.2);
-    m_RightMotorSix.set(ControlMode.PercentOutput, 0.2);
-}
-else{
-  m_RightMotorFour.set(ControlMode.PercentOutput, 0);
-  m_RightMotorFive.set(ControlMode.PercentOutput, 0);
-  m_RightMotorSix.set(ControlMode.PercentOutput, 0);}
-}
+      public double leftSideWheels() {
+        double encoder = (m_leftMotorOne.getSelectedSensorPosition() + m_leftMotorTwo.getSelectedSensorPosition() + m_leftMotorThree.getSelectedSensorPosition())/3;
+        double rotations = encoder / 2048;
+        double rotationsOfGearbox = rotations / 15.33;
+        double distanceTravelinches = rotationsOfGearbox * (6 * Math.PI);
+        return distanceTravelinches;
+      }
 
+      public double rightSideWheels() {
+        double encoder = (m_RightMotorFour.getSelectedSensorPosition() + m_RightMotorFive.getSelectedSensorPosition() + m_RightMotorSix.getSelectedSensorPosition())/3;
+        double rotations = encoder / 2048;
+        double rotationsOfGearbox = rotations / 15.33;
+        double distanceTravelinches = rotationsOfGearbox * (6 * Math.PI);
+        return distanceTravelinches;
+      }
 
 
 }

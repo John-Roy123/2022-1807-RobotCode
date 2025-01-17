@@ -9,11 +9,11 @@ import frc.robot.Systems.BatteryMap;
 
 public class Compress {
     public void run(Compressor COMPY){
-        SmartDashboard.putNumber("Pressure Switch Value", COMPY.getPressure());
+        //SmartDashboard.putNumber("Pressure Switch Value", COMPY.getPressure());
         COMPY.enableAnalog(60,120);
 
 
-        BatteryMap.comp(COMPY);
+        //BatteryMap.comp(COMPY);
 
 
         //Pnuematics Ports
